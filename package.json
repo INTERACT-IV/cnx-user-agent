@@ -1,6 +1,6 @@
 {
   "name": "@connectics/cnx-user-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Module WebRTC Connectics, basé sur SIP.js",
   "main": "index.js",
   "scripts": {
