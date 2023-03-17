@@ -1,0 +1,26 @@
+{
+  "name": "@connectics/cnx-user-agent",
+  "version": "1.0.1",
+  "description": "Module WebRTC Connectics, basé sur SIP.js",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/INTERACT-IV/cnx-user-agent.git"
+  },
+  "keywords": [
+    "WebRTC",
+    "SIP.js"
+  ],
+  "author": "Pascal Emond",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/INTERACT-IV/cnx-user-agent/issues"
+  },
+  "homepage": "https://github.com/INTERACT-IV/cnx-user-agent#readme",
+  "dependencies": {
+    "sip.js": "^0.21.2"
+  }
+}
