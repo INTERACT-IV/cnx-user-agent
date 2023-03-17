@@ -11,3 +11,4 @@ npm publish
 
 Le dépôt https://github.com/INTERACT-IV/cnx-user-agent-demo
 donne un exemple d'utilisation de ce package une fois publié.
+  
