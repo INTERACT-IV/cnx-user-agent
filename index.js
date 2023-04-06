@@ -56,7 +56,11 @@ const CnxUserAgent = function(server, user, password, audio_element_id, callback
     })
     var prom = remoteElement.play()
     if(prom !== undefined){
-      prom.then(_ => {trace?.log( `${user} : [audio.play()]`)}).catch(error => { throw new Error( `${user} : [audio.play() : ERROR = ${error}]`)});
+      prom.then(_ => {trace?.log( `${user} : [audio.play()]`)}).catch(error => { 
+        if( error.code != 20 ){   // Arrive sur un entrant qui raccroche avant que le media ne s'établisse
+          throw new Error( `${user} : [audio.play() : ERROR = ${error}]`)
+        }
+      });
     }
     else{
       throw new Error( `${user} : [audio.play() : ERROR = No promise returned]`)
