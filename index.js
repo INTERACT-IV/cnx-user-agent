@@ -4,13 +4,16 @@ import {
   UserAgent
 } from 'sip.js'
 
-const CnxUserAgent = function(server, user, password, audio_element_id, callbacks){
+const CnxUserAgent = function(config, audio_element_id, callbacks){
   const remoteElement = document.getElementById(audio_element_id) 
   let remoteStream= null
   let session = null
   let userAgent = null
   let trace = null
+
+  let {server, user, password, stun_service} = config
   const server_ws = `wss://${server}:7443/ws`
+  stun_service ??= "stun-pre.connectics.fr:3478"
 
   this.onConnect = callbacks?.onConnect
   this.onDisconnect = callbacks?.onDisconnect
@@ -104,7 +107,11 @@ const CnxUserAgent = function(server, user, password, audio_element_id, callback
       transportOptions: {
         server: server_ws
       },
-
+      sessionDescriptionHandlerFactoryOptions: {
+        peerConnectionConfiguration: {
+          iceServers: [{urls: stun_service}]
+        }
+      },
       uri: target,
       delegate: {
         onDisconnect: (...args) => {
