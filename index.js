@@ -109,7 +109,7 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
       },
       sessionDescriptionHandlerFactoryOptions: {
         peerConnectionConfiguration: {
-          iceServers: [{urls: stun_service}]
+          iceServers: [{urls: `stun:${stun_service}`}]
         }
       },
       uri: target,
