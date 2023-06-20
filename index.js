@@ -75,110 +75,111 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
     session.reject()
     session=null
   }
+  const uri = `sip:${user}@${server}`
+  const target = UserAgent.makeURI( uri )
+  if (!target) {
+    throw new Error( 'Failed to create target URI' )
+  }
+
+  function setupRemoteMedia (invitation) {
+    remoteStream = new MediaStream()
+    invitation.sessionDescriptionHandler.peerConnection.getReceivers().forEach( (receiver) => {
+      if (receiver.track) {
+        remoteStream.addTrack(receiver.track)
+      }
+    })
+    remoteElement.srcObject = remoteStream
+    return invitation.sessionDescriptionHandler.peerConnection.getReceivers()
+  }
+
+  const that=this
+  const userAgentOptions = {
+    authorizationPassword: password,
+    authorizationUsername: user,
+    logBuiltinEnabled: false,
+    logConnector: (level, category, label, content) => {
+      if(that.active_sip_trace && category == "sip.Transport"){
+        that.sip_trace += content
+      }
+    },
+    transportOptions: {
+      server: server_ws
+    },
+    sessionDescriptionHandlerFactoryOptions: {
+      iceGatheringTimeout: ice_gathering_timeout_ms,
+      peerConnectionConfiguration: {
+        iceServers: [{urls: `stun:${stun_service}`}]
+      }
+    },
+    uri: target,
+    delegate: {
+      onDisconnect: (...args) => {
+        trace?.log( `${user} : [onDisconnect]`)
+        this.onDisconnect?.apply(null, args)
+      },
+
+      onInvite: (invitation) => {
+        trace?.log( `${user} : [onInvite]`, invitation)
+
+        session = invitation
+
+        session.stateChange.addListener( (state) => {
+          switch (state) {
+            case SessionState.Establishing:
+              break
+
+            case SessionState.Established:
+              setupRemoteMedia( session )
+              trace?.log( `${user} : [onMedia]`)
+              that.onMedia?.apply(null)
+              break
+
+            case SessionState.Terminating: 
+            case SessionState.Terminated:
+              remoteElement.pause()
+              remoteElement.srcObject = null
+              session=null
+              trace?.log( `${user} : [onHangup]`)
+              that.onHangup?.apply(null, [that.local_hangup])
+              that.local_hangup=false
+              break
+          }
+        })
+        const hd = invitation.incomingInviteRequest.message.headers
+        this.onInvite?.apply(null,[hd["Call-ID"][0].raw, hd.From[0].raw,hd["P-Asserted-Identity"][0].raw])
+      },
+
+      onMessage: () => { trace?.log( `${user} : [onMessage]`) },
+      onNotify: () => { trace?.log( `${user} : [onNotify]`) }
+    }
+  }
+
+  userAgent = new UserAgent( userAgentOptions)
+
+  const registerOptions = {
+    requestDelegate: {
+      onReject(response)
+      {
+        trace?.log( `${user} : [onReject]`, response.message)
+        that.onReject?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
+      },
+      onAccept(response)
+      {
+        trace?.log( `${user} : [onAccept]`, response.message)
+        // Toujours 200, OK sur un Accept, mais pourquoi le masquer ...
+        that.onAccept?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
+      }
+    }
+  }
 
   this.register =() => {       
-    const uri = `sip:${user}@${server}`
-    const target = UserAgent.makeURI( uri )
-    if (!target) {
-      throw new Error( 'Failed to create target URI' )
-    }
-
-    function setupRemoteMedia (invitation) {
-      remoteStream = new MediaStream()
-      invitation.sessionDescriptionHandler.peerConnection.getReceivers().forEach( (receiver) => {
-        if (receiver.track) {
-          remoteStream.addTrack(receiver.track)
-        }
-      })
-      remoteElement.srcObject = remoteStream
-      return invitation.sessionDescriptionHandler.peerConnection.getReceivers()
-    }
-
-    const that=this
-
-    const userAgentOptions = {
-      authorizationPassword: password,
-      authorizationUsername: user,
-      logBuiltinEnabled: false,
-      logConnector: (level, category, label, content) => {
-        if(that.active_sip_trace && category == "sip.Transport"){
-          that.sip_trace += content
-        }
-      },
-      transportOptions: {
-        server: server_ws
-      },
-      sessionDescriptionHandlerFactoryOptions: {
-        iceGatheringTimeout: ice_gathering_timeout_ms,
-        peerConnectionConfiguration: {
-          iceServers: [{urls: `stun:${stun_service}`}]
-        }
-      },
-      uri: target,
-      delegate: {
-        onDisconnect: (...args) => {
-          trace?.log( `${user} : [onDisconnect]`)
-          this.onDisconnect?.apply(null, args)
-        },
-
-        onInvite: (invitation) => {
-          trace?.log( `${user} : [onInvite]`, invitation)
-
-          session = invitation
-
-          session.stateChange.addListener( (state) => {
-            switch (state) {
-              case SessionState.Establishing:
-                break
-
-              case SessionState.Established:
-                setupRemoteMedia( session )
-                trace?.log( `${user} : [onMedia]`)
-                that.onMedia?.apply(null)
-                break
-
-              case SessionState.Terminating: 
-              case SessionState.Terminated:
-                remoteElement.pause()
-                remoteElement.srcObject = null
-                session=null
-                trace?.log( `${user} : [onHangup]`)
-                that.onHangup?.apply(null, [that.local_hangup])
-                that.local_hangup=false
-                break
-            }
-          })
-          const hd = invitation.incomingInviteRequest.message.headers
-          this.onInvite?.apply(null,[hd["Call-ID"][0].raw, hd.From[0].raw,hd["P-Asserted-Identity"][0].raw])
-        },
-
-        onMessage: () => { trace?.log( `${user} : [onMessage]`) },
-        onNotify: () => { trace?.log( `${user} : [onNotify]`) }
-      }
-    }
-
-    userAgent = new UserAgent( userAgentOptions)
-
-    userAgent.start().then( () => {
-      const registerer = new Registerer( userAgent,{expires:1800,refreshFrequency:50})
-      var registerOptions = {
-        requestDelegate: {
-          onReject(response)
-          {
-            trace?.log( `${user} : [onReject]`, response.message)
-            that.onReject?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
-          },
-          onAccept(response)
-          {
-            trace?.log( `${user} : [onAccept]`, response.message)
-            // Toujours 200, OK sur un Accept, mais pourquoi le masquer ...
-            that.onAccept?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
-          }
-        }
-      }
-      registerer.register(registerOptions) 
-    })
+    const registerer = new Registerer( userAgent,{expires:1800,refreshFrequency:50})
+    registerer.register(registerOptions) 
   }
+
+  userAgent.start().then( () => {
+    this.register()
+  })
 
   this.hangup = () => {
     switch(session.state) {
