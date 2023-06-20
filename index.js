@@ -11,10 +11,11 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
   let userAgent = null
   let trace = null
 
-  let {server, user, password, stun_service} = config
+  let {server, user, password, stun_service, ice_gathering_timeout_ms} = config
   const server_ws = `wss://${server}:7443/ws`
   stun_service ??= "stun-pre.connectics.fr:3478"
-
+  ice_gathering_timeout_ms ??= 500
+  
   this.onConnect = callbacks?.onConnect
   this.onDisconnect = callbacks?.onDisconnect
   this.onInvite = callbacks?.onInvite
@@ -108,6 +109,7 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
         server: server_ws
       },
       sessionDescriptionHandlerFactoryOptions: {
+        iceGatheringTimeout: ice_gathering_timeout_ms,
         peerConnectionConfiguration: {
           iceServers: [{urls: `stun:${stun_service}`}]
         }
