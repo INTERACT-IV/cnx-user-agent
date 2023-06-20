@@ -23,6 +23,7 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
   this.onAccept = callbacks?.onAccept
   this.onReject = callbacks?.onReject
   this.onHangup = callbacks?.onHangup
+  this.onUnregister = callbacks?.onUnregister
 
   this.sip_trace = ""
   this.active_sip_trace = false
@@ -175,6 +176,12 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
   this.register =() => {       
     const registerer = new Registerer( userAgent,{expires:1800,refreshFrequency:50})
     registerer.register(registerOptions) 
+  }
+
+  this.unregister = () => {
+    const registerer = new Registerer( userAgent)
+    registerer.unregister() 
+    this.onUnregister?.apply(null)
   }
 
   userAgent.start().then( () => {
