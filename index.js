@@ -97,7 +97,7 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
   const userAgentOptions = {
     authorizationPassword: password,
     authorizationUsername: user,
-    logBuiltinEnabled: false,
+    logBuiltinEnabled: true,
     logConnector: (level, category, label, content) => {
       if(that.active_sip_trace && category == "sip.Transport"){
         that.sip_trace += content

@@ -21,6 +21,6 @@
   },
   "homepage": "https://github.com/INTERACT-IV/cnx-user-agent#readme",
   "dependencies": {
-    "sip.js": "^0.21.2"
+    "sip.js": "file:../SIP.js"
   }
 }
