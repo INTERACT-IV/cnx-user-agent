@@ -1,6 +1,7 @@
 import {
   Registerer,
   SessionState,
+  TransportState,
   UserAgent
 } from 'sip.js'
 
@@ -186,6 +187,17 @@ const CnxUserAgent = function(config, audio_element_id, callbacks){
 
   userAgent.start().then( () => {
     this.register()
+  })
+
+  userAgent.transport.stateChange.addListener( (state) => {
+    switch(state){
+      case TransportState.Connected:
+        that.onConnect?.apply(null)
+        break
+      case TransportState.Disconnected:
+        that.onDisconnect?.apply(null)
+        break
+    }
   })
 
   this.hangup = () => {

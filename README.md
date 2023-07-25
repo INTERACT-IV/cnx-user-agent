@@ -14,7 +14,7 @@ donne un exemple d'utilisation de ce package une fois publié.
 
 # Changements
 
-## 1.0.3
+## 1.1.0
 
 La configuration de CnxUserAgent est passée dans un objet config : 
 ```js
@@ -23,8 +23,12 @@ La configuration de CnxUserAgent est passée dans un objet config :
     password : ""           // Mot de passe associé
     server : ""             // Nom du serveur SIP  (hostname)
     stun_service : ""       // nom du service STUN (hostname:port)
+    ice_gathering_timeout_ms : 500  // Délai max d'attente de l'algorithme ICE
 }
 ```
+
+Ajout de la commande `unregister` et de l'événement `onUnregister` : à noter que le client ne reçoit jamais d'événement Unregister en provenance du serveur, donc l'événement n'est pas très utile puisqu'il est automatiquement lancé par la commande `unregister`
+Ajout des événements `onConnect` et `onDisconnect` liés à la connexion WebSocket.
 
 ### Bug corrigé
 - Lorsqu'un appel entrant décroché est raccroché par l'appelant avant la réception du média, une erreur est générée dans la console.
