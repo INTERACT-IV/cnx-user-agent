@@ -5,211 +5,210 @@ import {
   UserAgent
 } from 'sip.js'
 
-const CnxUserAgent = function(config, audio_element_id, callbacks){
-  const remoteElement = document.getElementById(audio_element_id) 
-  let remoteStream= null
-  let session = null
-  let userAgent = null
-  let trace = null
+const defaultConfig = {
+  server: null,
+  user: null,
+  password: null,
+  stun_service: 'stun-pre.connectics.fr:3478',
+  ice_gathering_timeout_ms: 500
+}
 
-  let {server, user, password, stun_service, ice_gathering_timeout_ms} = config
-  const server_ws = `wss://${server}:7443/ws`
-  stun_service ??= "stun-pre.connectics.fr:3478"
-  ice_gathering_timeout_ms ??= 500
-  
-  this.onConnect = callbacks?.onConnect
-  this.onDisconnect = callbacks?.onDisconnect
-  this.onInvite = callbacks?.onInvite
-  this.onMedia = callbacks?.onMedia
-  this.onAccept = callbacks?.onAccept
-  this.onReject = callbacks?.onReject
-  this.onHangup = callbacks?.onHangup
-  this.onUnregister = callbacks?.onUnregister
+class CnxUserAgent {
+  constructor (config, audioElementId, callbacks) {
+    this.config = { ...defaultConfig, ...config }
+    this.audioElementId = audioElementId
+    this.callbacks = callbacks
 
-  this.sip_trace = ""
-  this.active_sip_trace = false
+    this.onConnect = callbacks?.onConnect
+    this.onDisconnect = callbacks?.onDisconnect
+    this.onInvite = callbacks?.onInvite
+    this.onMedia = callbacks?.onMedia
+    this.onAccept = callbacks?.onAccept
+    this.onReject = callbacks?.onReject
+    this.onHangup = callbacks?.onHangup
+    this.onUnregister = callbacks?.onUnregister
 
-  this.trace_on = () => {
-    trace = console
-  } 
+    this.sipTrace = ''
 
-  this.trace_off = () => {
-    trace = null
-  } 
+    this.microDeviceId = null
 
-  this.sip_trace_on = () => {
-    this.active_sip_trace = true
+    this.serverWs = `wss://${this.config.server}:7443/ws`
+    this.stunService = this.config.stun_service
+    this.iceGatheringTimeoutMs = this.config.ice_gathering_timeout_ms
+    this.user = this.config.user
+
+    this.target = UserAgent.makeURI(`sip:${this.user}@${this.config.server}`)
+    if (!this.target) throw new Error('Failed to create target URI')
+
+    this.remoteElement = document.getElementById(this.audioElementId)
+
+    this.remoteStream = null
+    this.session = null
+    this.trace = null
+
+    this.localHangup = false
+
+    this.userAgent = new UserAgent({
+      authorizationPassword: this.config.password,
+      authorizationUsername: this.config.user,
+      logBuiltinEnabled: false,
+      transportOptions: {
+        server: this.serverWs
+      },
+      sessionDescriptionHandlerFactoryOptions: {
+        iceGatheringTimeout: this.iceGatheringTimeoutMs,
+        peerConnectionConfiguration: {
+          iceServers: [{ urls: `stun:${this.stunService}` }]
+        }
+      },
+      uri: this.target,
+      delegate: {
+        onDisconnect: (...args) => {
+          this.trace?.log(`${this.user} : [onDisconnect]`)
+          this.onDisconnect?.apply(null, args)
+        },
+
+        onInvite: (invitation) => {
+          this.trace?.log(`${this.user} : [onInvite]`, invitation)
+
+          this.session = invitation
+
+          this.session.stateChange.addListener((state) => {
+            switch (state) {
+              case SessionState.Establishing:
+                break
+
+              case SessionState.Established:
+                this.remoteStream = new MediaStream()
+                invitation.sessionDescriptionHandler.peerConnection.getReceivers().forEach((receiver) => {
+                  if (receiver.track) {
+                    this.remoteStream.addTrack(receiver.track)
+                  }
+                })
+                this.remoteElement.srcObject = this.remoteStream
+
+                this.trace?.log(`${this.user} : [onMedia]`)
+                this.onMedia?.apply(null)
+                break
+
+              case SessionState.Terminating:
+              case SessionState.Terminated:
+                this.remoteElement.pause()
+                this.remoteElement.srcObject = null
+                this.session = null
+                this.trace?.log(`${this.user} : [onHangup]`)
+                this.onHangup?.apply(null, [this.localHangup])
+                this.localHangup = false
+                break
+            }
+          })
+          const hd = invitation.incomingInviteRequest.message.headers
+          this.onInvite?.apply(null, [hd['Call-ID'][0].raw, hd.From[0].raw, hd['P-Asserted-Identity'][0].raw])
+        },
+
+        onMessage: () => { this.trace?.log(`${this.user} : [onMessage]`) },
+        onNotify: () => { this.trace?.log(`${this.user} : [onNotify]`) }
+      }
+    })
+
+    this.userAgent.start()
+
+    this.userAgent.transport.stateChange.addListener((state) => {
+      switch (state) {
+        case TransportState.Connected:
+          this.onConnect?.apply(null)
+          break
+        case TransportState.Disconnected:
+          this.onDisconnect?.apply(null)
+          break
+      }
+    })
   }
 
-  this.sip_trace_off = () => {
-    let s = this.sip_trace
-    this.sip_trace = ""
-    this.active_sip_trace = false
+  trace_on () {
+    this.trace = console
+  }
+
+  trace_off () {
+    this.trace = null
+  }
+
+  sip_trace_on () {
+    this.userAgent.options.logBuiltinEnabled = true
+    this.userAgent.getLoggerFactory().builtinEnabled = true
+  }
+
+  sip_trace_off () {
+    const s = this.sipTrace
+    this.sipTrace = ''
+    this.userAgent.options.logBuiltinEnabled = false
+    this.userAgent.getLoggerFactory().builtinEnabled = false
     return s
   }
 
-  this.answer = () => {
-    session.accept({
-      media: {
-        constraints: {
-          audio: true,
-          video: false
-        },
-        render: {
-          remote: remoteElement
-        }
-      }
-    })
-    var prom = remoteElement.play()
-    if(prom !== undefined){
-      prom.then(_ => {trace?.log( `${user} : [audio.play()]`)}).catch(error => { 
-        if( error.code != 20 ){   // Arrive sur un entrant qui raccroche avant que le media ne s'établisse
-          throw new Error( `${user} : [audio.play() : ERROR = ${error}]`)
-        }
-      });
-    }
-    else{
-      throw new Error( `${user} : [audio.play() : ERROR = No promise returned]`)
-    }
-  }
-
-  this.reject = () => {
-    session.reject()
-    session=null
-  }
-  const uri = `sip:${user}@${server}`
-  const target = UserAgent.makeURI( uri )
-  if (!target) {
-    throw new Error( 'Failed to create target URI' )
-  }
-
-  function setupRemoteMedia (invitation) {
-    remoteStream = new MediaStream()
-    invitation.sessionDescriptionHandler.peerConnection.getReceivers().forEach( (receiver) => {
-      if (receiver.track) {
-        remoteStream.addTrack(receiver.track)
-      }
-    })
-    remoteElement.srcObject = remoteStream
-    return invitation.sessionDescriptionHandler.peerConnection.getReceivers()
-  }
-
-  const that=this
-  const userAgentOptions = {
-    authorizationPassword: password,
-    authorizationUsername: user,
-    logBuiltinEnabled: true,
-    logConnector: (level, category, label, content) => {
-      if(that.active_sip_trace && category == "sip.Transport"){
-        that.sip_trace += content
-      }
-    },
-    transportOptions: {
-      server: server_ws
-    },
-    sessionDescriptionHandlerFactoryOptions: {
-      iceGatheringTimeout: ice_gathering_timeout_ms,
-      peerConnectionConfiguration: {
-        iceServers: [{urls: `stun:${stun_service}`}]
-      }
-    },
-    uri: target,
-    delegate: {
-      onDisconnect: (...args) => {
-        trace?.log( `${user} : [onDisconnect]`)
-        this.onDisconnect?.apply(null, args)
-      },
-
-      onInvite: (invitation) => {
-        trace?.log( `${user} : [onInvite]`, invitation)
-
-        session = invitation
-
-        session.stateChange.addListener( (state) => {
-          switch (state) {
-            case SessionState.Establishing:
-              break
-
-            case SessionState.Established:
-              setupRemoteMedia( session )
-              trace?.log( `${user} : [onMedia]`)
-              that.onMedia?.apply(null)
-              break
-
-            case SessionState.Terminating: 
-            case SessionState.Terminated:
-              remoteElement.pause()
-              remoteElement.srcObject = null
-              session=null
-              trace?.log( `${user} : [onHangup]`)
-              that.onHangup?.apply(null, [that.local_hangup])
-              that.local_hangup=false
-              break
+  async answer () {
+    try {
+      this.session.accept({
+        sessionDescriptionHandlerOptions: {
+          constraints: {
+            audio: this.microDeviceId ? { deviceId: this.microDeviceId } : true,
+            video: false
           }
-        })
-        const hd = invitation.incomingInviteRequest.message.headers
-        this.onInvite?.apply(null,[hd["Call-ID"][0].raw, hd.From[0].raw,hd["P-Asserted-Identity"][0].raw])
-      },
-
-      onMessage: () => { trace?.log( `${user} : [onMessage]`) },
-      onNotify: () => { trace?.log( `${user} : [onNotify]`) }
-    }
-  }
-
-  userAgent = new UserAgent( userAgentOptions)
-
-  const registerOptions = {
-    requestDelegate: {
-      onReject(response)
-      {
-        trace?.log( `${user} : [onReject]`, response.message)
-        that.onReject?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
-      },
-      onAccept(response)
-      {
-        trace?.log( `${user} : [onAccept]`, response.message)
-        // Toujours 200, OK sur un Accept, mais pourquoi le masquer ...
-        that.onAccept?.apply(null,[response.message.statusCode, response.message.reasonPhrase])
+        },
+        media: {
+          render: {
+            remote: this.remoteElement
+          }
+        }
+      })
+      await this.remoteElement.play()
+      this.trace?.log(`${this.user} : [audio.play()]`)
+    } catch (error) {
+      if (error.code !== 20) { // Arrive sur un entrant qui raccroche avant que le media ne s'établisse
+        throw new Error(`${this.user} : [audio.play() : ERROR = ${error}]`)
       }
     }
   }
 
-  this.register =() => {       
-    const registerer = new Registerer( userAgent,{expires:1800,refreshFrequency:50})
-    registerer.register(registerOptions) 
+  reject () {
+    this.session.reject()
+    this.session = null
   }
 
-  this.unregister = () => {
-    const registerer = new Registerer( userAgent)
-    registerer.unregister() 
+  register () {
+    const registerer = new Registerer(this.userAgent, { expires: 1800, refreshFrequency: 50 })
+    registerer.register({
+      requestDelegate: {
+        onReject: (response) => {
+          this.trace?.log(`${this.user} : [onReject]`, response.message)
+          this.onReject?.apply(null, [response.message.statusCode, response.message.reasonPhrase])
+        },
+        onAccept: (response) => {
+          this.trace?.log(`${this.user} : [onAccept]`, response.message)
+          // Toujours 200, OK sur un Accept, mais pourquoi le masquer ...
+          this.onAccept?.apply(null, [response.message.statusCode, response.message.reasonPhrase])
+        }
+      }
+    })
+  }
+
+  unregister () {
+    const registerer = new Registerer(this.userAgent)
+    registerer.unregister()
+    this.trace?.log(`${this.user} : [unregister]`)
     this.onUnregister?.apply(null)
   }
 
-  userAgent.start().then( () => {
-    this.register()
-  })
-
-  userAgent.transport.stateChange.addListener( (state) => {
-    switch(state){
-      case TransportState.Connected:
-        that.onConnect?.apply(null)
-        break
-      case TransportState.Disconnected:
-        that.onDisconnect?.apply(null)
-        break
-    }
-  })
-
-  this.hangup = () => {
-    switch(session.state) {
+  hangup () {
+    switch (this.session.state) {
       case SessionState.Initial:
       case SessionState.Establishing:
-        this.local_hangup = true
-        session.reject()
+        this.localHangup = true
+        this.session.reject()
         break
       case SessionState.Established:
-        this.local_hangup = true
-        session.bye()
+        this.localHangup = true
+        this.session.bye()
         break
     }
   }
